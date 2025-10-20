@@ -1,6 +1,10 @@
 import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,16 +19,16 @@ public class Dashboard extends JFrame {
     JCheckBox[] columnChecks;
     String currentTable = "";
 
-    // ADDED: A master list to hold all original table columns
     private java.util.List<TableColumn> allTableColumns;
-
     private String fname;
     private String lname;
     private JLabel welcomeLabel;
+    private String userMobile;
 
-    public Dashboard(String fname, String lname) {
+    public Dashboard(String fname, String lname, String mobile) {
         this.fname = fname;
         this.lname = lname;
+        this.userMobile = mobile;
 
         setTitle("Dashboard");
         setExtendedState(JFrame.MAXIMIZED_BOTH);
@@ -69,7 +73,7 @@ public class Dashboard extends JFrame {
             tableBtnPanel.revalidate();
             tableBtnPanel.repaint();
 
-            CollegePredictor predictorPanel = new CollegePredictor(fname, lname, this);
+            CollegePredictor predictorPanel = new CollegePredictor(fname, lname, this, userMobile);
             contentPanel.add(predictorPanel, BorderLayout.CENTER);
 
             contentPanel.revalidate();
@@ -123,6 +127,21 @@ public class Dashboard extends JFrame {
         btnJeeCutoff.addActionListener(e -> loadTable("jeeCutoff"));
         btnCETPercentileCutoff.addActionListener(e -> loadTable("PercentileCutoff"));
 
+        JButton btnPlacement = createCuteButton("Placement Stats", new Color(32, 178, 170));
+        JButton btnRecruiters = createCuteButton("Top Recruiters", new Color(218, 112, 214));
+        JButton btnSocial = createCuteButton("Social Media", new Color(60, 179, 113));
+        JButton btnRating = createCuteButton("User Rating", new Color(255, 165, 0));
+
+        tableBtnPanel.add(btnPlacement);
+        tableBtnPanel.add(btnRecruiters);
+        tableBtnPanel.add(btnSocial);
+        tableBtnPanel.add(btnRating);
+
+        btnPlacement.addActionListener(e -> loadTable("PlacementStats"));
+        btnRecruiters.addActionListener(e -> loadTable("TopRecruiters"));
+        btnSocial.addActionListener(e -> loadTable("SocialMediaHandles"));
+        btnRating.addActionListener(e -> loadTable("UserRatings"));
+
         tableBtnPanel.revalidate();
         tableBtnPanel.repaint();
     }
@@ -138,18 +157,43 @@ public class Dashboard extends JFrame {
         return btn;
     }
 
+    // --- MODIFIED METHOD ---
     private void loadTable(String tableName) {
         currentTable = tableName;
         contentPanel.removeAll();
         contentPanel.setLayout(new BorderLayout());
 
         DefaultTableModel model = fetchTableData(tableName);
-        if (model == null) return;
+        if (model == null || model.getColumnCount() == 0) {
+            JOptionPane.showMessageDialog(this, "Could not load data for '" + tableName + "'. It may not exist yet.", "Load Error", JOptionPane.WARNING_MESSAGE);
+            showMainButtons();
+            return;
+        }
         table = new JTable(model) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
         };
 
-        // ADDED: This block stores a copy of the original columns in their original order
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem addToFavoritesItem = new JMenuItem("⭐ Add to Favorites");
+        popupMenu.add(addToFavoritesItem);
+        table.setComponentPopupMenu(popupMenu);
+
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isRightMouseButton(e)) {
+                    int row = table.rowAtPoint(e.getPoint());
+                    if (row >= 0 && row < table.getRowCount()) {
+                        table.setRowSelectionInterval(row, row);
+                    } else {
+                        table.clearSelection();
+                    }
+                }
+            }
+        });
+
+        addToFavoritesItem.addActionListener(e -> addSelectedRowToFavorites());
+
         allTableColumns = new ArrayList<>();
         TableColumnModel columnModel = table.getColumnModel();
         for (int i = 0; i < columnModel.getColumnCount(); i++) {
@@ -158,7 +202,6 @@ public class Dashboard extends JFrame {
 
         sorter = new TableRowSorter<>(model);
         table.setRowSorter(sorter);
-
         applyNumericComparators(model);
 
         table.setRowHeight(25);
@@ -172,6 +215,11 @@ public class Dashboard extends JFrame {
 
         JPanel controlPanel = new JPanel(new BorderLayout());
 
+        // --- NEW FAVORITES BUTTON (Repositioned) ---
+        JButton favoritesBtn = createCuteButton("My Favorites", new Color(255, 105, 180));
+        favoritesBtn.addActionListener(e -> viewFavorites(currentTable));
+
+        // --- COLUMN CHECKBOX PANEL ---
         JPanel columnCheckPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         columnChecks = new JCheckBox[model.getColumnCount()];
         for (int i = 0; i < model.getColumnCount(); i++) {
@@ -184,10 +232,16 @@ public class Dashboard extends JFrame {
                 JScrollPane.VERTICAL_SCROLLBAR_NEVER,
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         checkScroll.setPreferredSize(new Dimension(800, 45));
-        controlPanel.add(checkScroll, BorderLayout.NORTH);
+
+        // --- NEW NORTH PANEL to hold Checkboxes and Favorites Button ---
+        JPanel northControlPanel = new JPanel(new BorderLayout(10, 0));
+        northControlPanel.add(checkScroll, BorderLayout.CENTER);
+        northControlPanel.add(favoritesBtn, BorderLayout.EAST); // Button in top-right
+
+        controlPanel.add(northControlPanel, BorderLayout.NORTH); // Add new combined panel to NORTH
+        // --- END OF REPOSITIONING ---
 
         JPanel queryAndSearchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-
         JLabel tableLabel = new JLabel("Table: " + tableName);
         tableLabel.setFont(new Font("Arial", Font.BOLD, 14));
         queryAndSearchPanel.add(tableLabel);
@@ -197,40 +251,30 @@ public class Dashboard extends JFrame {
             JTextField minFee = new JTextField(6);
             JTextField maxFee = new JTextField(6);
             JButton rangeBtn = createCuteButton("Apply Range", new Color(70, 130, 180));
-
-            avgBtn.addActionListener(e -> runQuery(
-                    "SELECT CourseName, AVG(Fees) AS AvgFee FROM BranchFees GROUP BY CourseName"
-            ));
-
+            avgBtn.addActionListener(e -> runQuery("SELECT CourseName, AVG(Fees) AS AvgFee FROM BranchFees GROUP BY CourseName"));
             rangeBtn.addActionListener(e -> {
                 try {
                     int min = Integer.parseInt(minFee.getText().trim());
                     int max = Integer.parseInt(maxFee.getText().trim());
                     runQuery("SELECT * FROM BranchFees WHERE Fees BETWEEN " + min + " AND " + max);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "Enter valid min & max fee.");
-                }
+                } catch (Exception ex) { JOptionPane.showMessageDialog(this, "Enter valid min & max fee."); }
             });
-
             queryAndSearchPanel.add(avgBtn);
-            queryAndSearchPanel.add(new JLabel("Min Fee:"));
-            queryAndSearchPanel.add(minFee);
-            queryAndSearchPanel.add(new JLabel("Max Fee:"));
-            queryAndSearchPanel.add(maxFee);
+            queryAndSearchPanel.add(new JLabel("Min Fee:")); queryAndSearchPanel.add(minFee);
+            queryAndSearchPanel.add(new JLabel("Max Fee:")); queryAndSearchPanel.add(maxFee);
             queryAndSearchPanel.add(rangeBtn);
         }
 
         if (tableName.equals("CollegeInfo")) {
             JButton countBtn = createCuteButton("Show University Count", new Color(70, 130, 180));
-            countBtn.addActionListener(e -> runQuery(
-                    "SELECT University, COUNT(*) AS CollegeCount FROM CollegeInfo GROUP BY University"
-            ));
+            countBtn.addActionListener(e -> runQuery("SELECT University, COUNT(*) AS CollegeCount FROM CollegeInfo GROUP BY University"));
             queryAndSearchPanel.add(countBtn);
         }
 
         JTextField searchText = new JTextField(12);
         JButton searchBtn = new JButton("Search");
         JButton resetBtn = new JButton("Reset");
+        JButton downloadBtn = createCuteButton("Download CSV", new Color(34, 139, 34));
         sortColumn = new JComboBox<>();
         sortOrder = new JComboBox<>(new String[]{"None", "Ascending", "Descending"});
         JButton applySort = new JButton("Sort");
@@ -241,10 +285,12 @@ public class Dashboard extends JFrame {
         queryAndSearchPanel.add(searchText);
         queryAndSearchPanel.add(searchBtn);
         queryAndSearchPanel.add(resetBtn);
+        queryAndSearchPanel.add(downloadBtn);
         queryAndSearchPanel.add(new JLabel("Sort:"));
         queryAndSearchPanel.add(sortColumn);
         queryAndSearchPanel.add(sortOrder);
         queryAndSearchPanel.add(applySort);
+        // Removed favoritesBtn from here
 
         controlPanel.add(queryAndSearchPanel, BorderLayout.SOUTH);
 
@@ -256,12 +302,71 @@ public class Dashboard extends JFrame {
             if (text.isEmpty()) sorter.setRowFilter(null);
             else sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text));
         });
-
         resetBtn.addActionListener(e -> loadTable(currentTable));
         applySort.addActionListener(e -> applySortAction());
+        downloadBtn.addActionListener(e -> CsvExporter.exportToCsv(table, Dashboard.this));
 
         contentPanel.revalidate();
         contentPanel.repaint();
+    }
+
+    private void viewFavorites(String originalTableName) {
+        String favTableName = "Favorites_" + originalTableName;
+        TableViewer favoritesViewer = new TableViewer(favTableName, this.userMobile);
+        favoritesViewer.setVisible(true);
+    }
+
+    private void addSelectedRowToFavorites() {
+        int selectedViewRow = table.getSelectedRow();
+        if (selectedViewRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a row to add.", "No Row Selected", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String favTableName = "Favorites_" + this.currentTable;
+        int modelRow = table.convertRowIndexToModel(selectedViewRow);
+        DefaultTableModel model = (DefaultTableModel) table.getModel();
+
+        StringBuilder sql = new StringBuilder("INSERT INTO " + favTableName + " (user_mobile, ");
+        StringBuilder values = new StringBuilder(" VALUES (?, ");
+        ArrayList<Object> params = new ArrayList<>();
+        params.add(this.userMobile);
+
+        for (int i = 0; i < model.getColumnCount(); i++) {
+            sql.append("`").append(model.getColumnName(i)).append("`");
+            values.append("?");
+            params.add(model.getValueAt(modelRow, i));
+
+            if (i < model.getColumnCount() - 1) {
+                sql.append(", ");
+                values.append(", ");
+            }
+        }
+
+        sql.append(")");
+        values.append(")");
+        String finalSql = sql.toString() + values.toString();
+
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement pst = con.prepareStatement(finalSql)) {
+
+            for (int i = 0; i < params.size(); i++) {
+                pst.setObject(i + 1, params.get(i));
+            }
+
+            pst.executeUpdate();
+            JOptionPane.showMessageDialog(this, "✅ Added to Favorites!");
+
+        } catch (SQLException ex) {
+            if (ex.getMessage().contains("Duplicate entry")) {
+                JOptionPane.showMessageDialog(this, "This item is already in your favorites.", "Duplicate", JOptionPane.INFORMATION_MESSAGE);
+            } else if (ex.getErrorCode() == 1146) {
+                JOptionPane.showMessageDialog(this, "❌ Error: Table '" + favTableName + "' does not exist.\nPlease ask the administrator to create it.", "Table Not Found", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "❌ Error adding to favorites: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        }
     }
 
     private void runQuery(String sql) {
@@ -271,12 +376,10 @@ public class Dashboard extends JFrame {
 
             ResultSetMetaData meta = rs.getMetaData();
             int colCount = meta.getColumnCount();
-
             Vector<String> columnNames = new Vector<>();
             for (int i = 1; i <= colCount; i++) {
                 columnNames.add(meta.getColumnName(i));
             }
-
             Vector<Vector<Object>> data = new Vector<>();
             while (rs.next()) {
                 Vector<Object> row = new Vector<>();
@@ -290,7 +393,6 @@ public class Dashboard extends JFrame {
             table.setModel(newModel);
             sorter = new TableRowSorter<>(newModel);
             table.setRowSorter(sorter);
-
             applyNumericComparators(newModel);
             updateSortOptions(sortColumn);
             resizeColumnWidths(table);
@@ -301,23 +403,16 @@ public class Dashboard extends JFrame {
         }
     }
 
-    // REPLACED: The entire old toggleColumn method is replaced with this corrected version.
     private void toggleColumn(int colIndex) {
         TableColumnModel colModel = table.getColumnModel();
-
-        // 1. Remove all columns from the table's current view
         while (colModel.getColumnCount() > 0) {
             colModel.removeColumn(colModel.getColumn(0));
         }
-
-        // 2. Re-add only the columns that are currently checked, in their correct original order
         for (int i = 0; i < allTableColumns.size(); i++) {
             if (columnChecks[i].isSelected()) {
                 colModel.addColumn(allTableColumns.get(i));
             }
         }
-
-        // 3. Update the dropdown for sorting options
         updateSortOptions(sortColumn);
     }
 
@@ -333,11 +428,9 @@ public class Dashboard extends JFrame {
 
     private void applySortAction() {
         if (sortColumn.getSelectedIndex() < 0) return;
-
         int colIndexToView = sortColumn.getSelectedIndex();
         TableColumn selectedColumn = table.getColumnModel().getColumn(colIndexToView);
         int modelIndex = selectedColumn.getModelIndex();
-
         String order = (String) sortOrder.getSelectedItem();
         if ("None".equals(order)) {
             sorter.setSortKeys(null);
@@ -357,7 +450,6 @@ public class Dashboard extends JFrame {
             int colCount = meta.getColumnCount();
             Vector<String> columnNames = new Vector<>();
             for (int i = 1; i <= colCount; i++) columnNames.add(meta.getColumnName(i));
-
             Vector<Vector<Object>> data = new Vector<>();
             while (rs.next()) {
                 Vector<Object> row = new Vector<>();
@@ -365,9 +457,13 @@ public class Dashboard extends JFrame {
                 data.add(row);
             }
             return new DefaultTableModel(data, columnNames);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return new DefaultTableModel();
+        } catch (SQLException e) {
+            if (e.getErrorCode() == 1146) {
+                JOptionPane.showMessageDialog(this, "Error: Table '" + tableName + "' does not exist.", "Table Not Found", JOptionPane.ERROR_MESSAGE);
+            } else {
+                e.printStackTrace();
+            }
+            return null;
         }
     }
 
@@ -392,7 +488,6 @@ public class Dashboard extends JFrame {
         for (int col = 0; col < table.getColumnCount(); col++) {
             int maxWidth = 75;
             TableColumn column = columnModel.getColumn(col);
-
             TableCellRenderer headerRenderer = column.getHeaderRenderer();
             if (headerRenderer == null) {
                 headerRenderer = table.getTableHeader().getDefaultRenderer();
@@ -400,13 +495,11 @@ public class Dashboard extends JFrame {
             Component headerComp = headerRenderer.getTableCellRendererComponent(
                     table, column.getHeaderValue(), false, false, 0, col);
             maxWidth = Math.max(maxWidth, headerComp.getPreferredSize().width);
-
             for (int row = 0; row < table.getRowCount(); row++) {
                 TableCellRenderer cellRenderer = table.getCellRenderer(row, col);
                 Component c = table.prepareRenderer(cellRenderer, row, col);
                 maxWidth = Math.max(maxWidth, c.getPreferredSize().width + 10);
             }
-
             column.setPreferredWidth(maxWidth);
         }
     }

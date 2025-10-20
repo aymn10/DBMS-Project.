@@ -60,7 +60,7 @@ public class LoginPage extends JFrame {
         btn.setForeground(Color.WHITE);
         btn.setFont(new Font("Arial", Font.BOLD, 14));
         btn.setFocusPainted(false);
-        btn.setBorder(BorderFactory.createEmptyBorder(8, 20, 8, 20));
+        btn.setBorder(BorderFactory.createEmptyBorder(8, 20, 8,     20));
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         return btn;
     }
@@ -80,13 +80,16 @@ public class LoginPage extends JFrame {
             String sql = "SELECT * FROM users WHERE mobile=? AND pin=?";
             PreparedStatement pst = con.prepareStatement(sql);
             pst.setString(1, mobile);
-            pst.setString(2, pin);  
+            pst.setString(2, pin);
 
             ResultSet rs = pst.executeQuery();
             if (rs.next()) {
                 JOptionPane.showMessageDialog(this, "✅ Login Successful!");
                 dispose();
-                new Dashboard(rs.getString("firstname"), rs.getString("lastname")).setVisible(true);
+                // --- MODIFICATION HERE ---
+                // Pass the mobile number to the Dashboard
+                new Dashboard(rs.getString("firstname"), rs.getString("lastname"), mobile).setVisible(true);
+                // --- END MODIFICATION ---
             } else {
                 JOptionPane.showMessageDialog(this, "❌ Invalid Mobile or PIN");
             }
@@ -101,5 +104,3 @@ public class LoginPage extends JFrame {
         SwingUtilities.invokeLater(() -> new LoginPage().setVisible(true));
     }
 }
-
-

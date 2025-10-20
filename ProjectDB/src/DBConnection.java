@@ -3,7 +3,7 @@ import java.sql.*;
 public class DBConnection {
     static final String URL = "jdbc:mysql://localhost:3306/project";
     static final String USER = "root";
-    static final String PASS = "SQL@3007";
+    static final String PASS = "xxxxxxxx";
 
     public static Connection getConnection() {
         try {
@@ -18,3 +18,4 @@ public class DBConnection {
         }
     }
 }
+

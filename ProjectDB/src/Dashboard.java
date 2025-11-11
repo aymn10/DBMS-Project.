@@ -63,6 +63,7 @@ public class Dashboard extends JFrame {
 
         JButton viewCollegeBtn = createCuteButton("View Colleges", new Color(135, 206, 250));
         JButton predictCollegeBtn = createCuteButton("Predict College", new Color(255, 182, 193));
+        JButton analyticsBtn = createCuteButton("📊 Analytics", new Color(144, 238, 144));
         JButton logoutBtn = createCuteButton("Logout", new Color(240, 128, 128));
 
         viewCollegeBtn.addActionListener(e -> showTableButtons());
@@ -79,6 +80,11 @@ public class Dashboard extends JFrame {
             contentPanel.revalidate();
             contentPanel.repaint();
         });
+
+        analyticsBtn.addActionListener(e -> {
+            new AnalyticsPage().setVisible(true);
+        });
+
         logoutBtn.addActionListener(e -> {
             dispose();
             new LoginPage().setVisible(true);
@@ -86,6 +92,7 @@ public class Dashboard extends JFrame {
 
         topButtonContainer.add(viewCollegeBtn);
         topButtonContainer.add(predictCollegeBtn);
+        topButtonContainer.add(analyticsBtn);
         topButtonContainer.add(logoutBtn);
 
         topButtonContainer.revalidate();
@@ -132,15 +139,24 @@ public class Dashboard extends JFrame {
         JButton btnSocial = createCuteButton("Social Media", new Color(60, 179, 113));
         JButton btnRating = createCuteButton("User Rating", new Color(255, 165, 0));
 
+        // --- BUTTON MOVED AND RENAMED HERE ---
+        JButton btnFavoritesLog = createCuteButton("Favorites Log", new Color(153, 50, 204)); // Orange
+
         tableBtnPanel.add(btnPlacement);
         tableBtnPanel.add(btnRecruiters);
         tableBtnPanel.add(btnSocial);
         tableBtnPanel.add(btnRating);
+        tableBtnPanel.add(btnFavoritesLog); // Added to panel
 
         btnPlacement.addActionListener(e -> loadTable("PlacementStats"));
         btnRecruiters.addActionListener(e -> loadTable("TopRecruiters"));
         btnSocial.addActionListener(e -> loadTable("SocialMediaHandles"));
         btnRating.addActionListener(e -> loadTable("UserRatings"));
+
+        // --- ACTION LISTENER FOR NEW BUTTON ---
+        btnFavoritesLog.addActionListener(e -> {
+            new TableViewer("activity_log").setVisible(true);
+        });
 
         tableBtnPanel.revalidate();
         tableBtnPanel.repaint();
@@ -157,7 +173,6 @@ public class Dashboard extends JFrame {
         return btn;
     }
 
-    // --- MODIFIED METHOD ---
     private void loadTable(String tableName) {
         currentTable = tableName;
         contentPanel.removeAll();
@@ -176,6 +191,53 @@ public class Dashboard extends JFrame {
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem addToFavoritesItem = new JMenuItem("⭐ Add to Favorites");
         popupMenu.add(addToFavoritesItem);
+
+        // --- "FIND SIMILAR" FEATURE START ---
+        if (tableName.equals("CollegeInfo")) {
+            JMenuItem findSimilarItem = new JMenuItem("Find Similar (by Location)");
+            popupMenu.add(findSimilarItem);
+
+            findSimilarItem.addActionListener(e -> {
+                int selectedRow = table.getSelectedRow();
+                if (selectedRow == -1) {
+                    JOptionPane.showMessageDialog(this, "Please select a college first.", "No Row Selected", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                try {
+                    int modelRow = table.convertRowIndexToModel(selectedRow);
+
+                    int instCodeModelIndex = -1;
+                    for(int i=0; i < table.getColumnModel().getColumnCount(); i++) {
+                        if(table.getColumnModel().getColumn(i).getHeaderValue().equals("InstituteCode")) {
+                            instCodeModelIndex = table.getColumnModel().getColumn(i).getModelIndex();
+                            break;
+                        }
+                    }
+
+                    if(instCodeModelIndex == -1) {
+                        JOptionPane.showMessageDialog(this,
+                                "Cannot find similar: 'InstituteCode' column is not visible or available.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
+                    String instCode = model.getValueAt(modelRow, instCodeModelIndex).toString();
+
+                    String sql = "SELECT * FROM CollegeInfo " +
+                            "WHERE Location = (SELECT Location FROM CollegeInfo WHERE InstituteCode = '" + instCode + "') " +
+                            "AND InstituteCode != '" + instCode + "'";
+
+                    runQuery(sql);
+
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Error finding similar colleges: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    ex.printStackTrace();
+                }
+            });
+        }
+        // --- "FIND SIMILAR" FEATURE END ---
+
         table.setComponentPopupMenu(popupMenu);
 
         table.addMouseListener(new MouseAdapter() {
@@ -215,11 +277,9 @@ public class Dashboard extends JFrame {
 
         JPanel controlPanel = new JPanel(new BorderLayout());
 
-        // --- NEW FAVORITES BUTTON (Repositioned) ---
         JButton favoritesBtn = createCuteButton("My Favorites", new Color(255, 105, 180));
         favoritesBtn.addActionListener(e -> viewFavorites(currentTable));
 
-        // --- COLUMN CHECKBOX PANEL ---
         JPanel columnCheckPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         columnChecks = new JCheckBox[model.getColumnCount()];
         for (int i = 0; i < model.getColumnCount(); i++) {
@@ -233,13 +293,11 @@ public class Dashboard extends JFrame {
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         checkScroll.setPreferredSize(new Dimension(800, 45));
 
-        // --- NEW NORTH PANEL to hold Checkboxes and Favorites Button ---
         JPanel northControlPanel = new JPanel(new BorderLayout(10, 0));
         northControlPanel.add(checkScroll, BorderLayout.CENTER);
-        northControlPanel.add(favoritesBtn, BorderLayout.EAST); // Button in top-right
+        northControlPanel.add(favoritesBtn, BorderLayout.EAST);
 
-        controlPanel.add(northControlPanel, BorderLayout.NORTH); // Add new combined panel to NORTH
-        // --- END OF REPOSITIONING ---
+        controlPanel.add(northControlPanel, BorderLayout.NORTH);
 
         JPanel queryAndSearchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
         JLabel tableLabel = new JLabel("Table: " + tableName);
@@ -290,7 +348,6 @@ public class Dashboard extends JFrame {
         queryAndSearchPanel.add(sortColumn);
         queryAndSearchPanel.add(sortOrder);
         queryAndSearchPanel.add(applySort);
-        // Removed favoritesBtn from here
 
         controlPanel.add(queryAndSearchPanel, BorderLayout.SOUTH);
 
@@ -316,6 +373,7 @@ public class Dashboard extends JFrame {
         favoritesViewer.setVisible(true);
     }
 
+    // --- TRANSACTION (TCL) METHOD ---
     private void addSelectedRowToFavorites() {
         int selectedViewRow = table.getSelectedRow();
         if (selectedViewRow == -1) {
@@ -327,6 +385,7 @@ public class Dashboard extends JFrame {
         int modelRow = table.convertRowIndexToModel(selectedViewRow);
         DefaultTableModel model = (DefaultTableModel) table.getModel();
 
+        // Build the dynamic SQL query for the favorites table
         StringBuilder sql = new StringBuilder("INSERT INTO " + favTableName + " (user_mobile, ");
         StringBuilder values = new StringBuilder(" VALUES (?, ");
         ArrayList<Object> params = new ArrayList<>();
@@ -342,32 +401,72 @@ public class Dashboard extends JFrame {
                 values.append(", ");
             }
         }
-
         sql.append(")");
         values.append(")");
         String finalSql = sql.toString() + values.toString();
 
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(finalSql)) {
+        // --- TRANSACTION LOGIC START ---
+        Connection con = null;
+        try {
+            // 1. Get connection and START THE TRANSACTION
+            con = DBConnection.getConnection();
+            con.setAutoCommit(false); // Manually control the transaction
 
-            for (int i = 0; i < params.size(); i++) {
-                pst.setObject(i + 1, params.get(i));
+            // --- COMMAND 1: INSERT INTO FAVORITES ---
+            try (PreparedStatement pstFav = con.prepareStatement(finalSql)) {
+                for (int i = 0; i < params.size(); i++) {
+                    pstFav.setObject(i + 1, params.get(i));
+                }
+                pstFav.executeUpdate();
             }
 
-            pst.executeUpdate();
+            // --- COMMAND 2: INSERT INTO ACTIVITY LOG ---
+            String logSql = "INSERT INTO activity_log (user_mobile, action, details) VALUES (?, ?, ?)";
+            try (PreparedStatement pstLog = con.prepareStatement(logSql)) {
+                pstLog.setString(1, this.userMobile);
+                pstLog.setString(2, "ADD_FAVORITE");
+                pstLog.setString(3, "Added item to " + favTableName);
+                pstLog.executeUpdate();
+            }
+
+            // 3. COMMIT THE TRANSACTION (both commands succeeded)
+            con.commit();
             JOptionPane.showMessageDialog(this, "✅ Added to Favorites!");
 
         } catch (SQLException ex) {
+            // 4. ROLLBACK THE TRANSACTION (something failed)
+            JOptionPane.showMessageDialog(this, "❌ Error adding favorite. Rolling back.", "Transaction Error", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+            try {
+                if (con != null) {
+                    System.err.println("Transaction is being rolled back.");
+                    con.rollback();
+                }
+            } catch (SQLException rbEx) {
+                System.err.println("Error rolling back transaction: " + rbEx.getMessage());
+            }
+
+            // Handle specific errors (like the old code did)
             if (ex.getMessage().contains("Duplicate entry")) {
                 JOptionPane.showMessageDialog(this, "This item is already in your favorites.", "Duplicate", JOptionPane.INFORMATION_MESSAGE);
-            } else if (ex.getErrorCode() == 1146) {
-                JOptionPane.showMessageDialog(this, "❌ Error: Table '" + favTableName + "' does not exist.\nPlease ask the administrator to create it.", "Table Not Found", JOptionPane.ERROR_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "❌ Error adding to favorites: " + ex.getMessage());
-                ex.printStackTrace();
+            } else if (ex.getErrorCode() == 1146) { // Table doesn't exist
+                JOptionPane.showMessageDialog(this, "❌ Error: Table '" + favTableName + "' or 'activity_log' does not exist.", "Table Not Found", JOptionPane.ERROR_MESSAGE);
+            }
+
+        } finally {
+            // 5. CLEAN UP (Always run this)
+            try {
+                if (con != null) {
+                    con.setAutoCommit(true); // Reset connection to default
+                    con.close();
+                }
+            } catch (SQLException finalEx) {
+                finalEx.printStackTrace();
             }
         }
+        // --- TRANSACTION LOGIC END ---
     }
+
 
     private void runQuery(String sql) {
         try (Connection con = DBConnection.getConnection();
@@ -396,6 +495,31 @@ public class Dashboard extends JFrame {
             applyNumericComparators(newModel);
             updateSortOptions(sortColumn);
             resizeColumnWidths(table);
+
+            // --- NEW: Reset column visibility checkboxes ---
+            TableColumnModel columnModel = table.getColumnModel();
+            allTableColumns.clear();
+            for (int i = 0; i < columnModel.getColumnCount(); i++) {
+                allTableColumns.add(columnModel.getColumn(i));
+            }
+
+            // --- FIX: Correctly find the columnCheckPanel ---
+            JPanel controlPanel = (JPanel) contentPanel.getComponent(0); // The top control panel
+            JPanel northControlPanel = (JPanel) controlPanel.getComponent(0); // The panel with checkboxes + fav btn
+            JScrollPane checkScroll = (JScrollPane) northControlPanel.getComponent(0); // The scrollpane for checkboxes
+            JPanel columnCheckPanel = (JPanel) checkScroll.getViewport().getView(); // The actual panel with checkboxes
+
+            columnCheckPanel.removeAll();
+            columnChecks = new JCheckBox[newModel.getColumnCount()];
+            for (int i = 0; i < newModel.getColumnCount(); i++) {
+                final int colIndex = i;
+                columnChecks[i] = new JCheckBox(newModel.getColumnName(i), true);
+                columnChecks[i].addActionListener(e -> toggleColumn(colIndex));
+                columnCheckPanel.add(columnChecks[i]);
+            }
+            columnCheckPanel.revalidate();
+            columnCheckPanel.repaint();
+            // --- END RESET/FIX ---
 
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error running query: " + e.getMessage());
